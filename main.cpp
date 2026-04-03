@@ -64,7 +64,9 @@ void usage()
 	printf("PackBootLoader:\t\tpack\r\n");
 	printf("UnpackBootLoader:\tunpack <boot loader>\r\n");
 	printf("TagSPL:\t\t\ttagspl <tag> <U-Boot SPL>\r\n");
-	printf("-------------------------------------------------------\r\n\r\n");
+	printf("-------------------------------------------------------\r\n");
+	printf("If multiple devices are found, set DEVLOCATION=<LocationID> to select one.\r\n");
+	printf("Use 'ld' to list devices and their LocationIDs.\r\n\r\n");
 }
 void ProgressInfoProc(UINT deviceLayer, ENUM_PROGRESS_PROMPT promptID, long long totalValue, long long currentValue, ENUM_CALL_STEP emCall)
 {
@@ -3100,6 +3102,7 @@ bool handle_command(int argc, char* argv[], CRKScan *pScan)
 	bool bRet,bSuccess = false;
 	char *s;
 	int i, ret;
+	int deviceIndex = -1;
 	STRUCT_RKDEVICE_DESC dev;
 	u8 master_gpt[34 * SECTOR_SIZE], param_buffer[512 * SECTOR_SIZE];
 	u64 lba, lba_end;
@@ -3139,22 +3142,41 @@ bool handle_command(int argc, char* argv[], CRKScan *pScan)
 		list_device(pScan);
 		return (cnt>0)?true:false;
 	}
-	
+
 	if (cnt < 1) {
 		ERROR_COLOR_ATTR;
 		printf("Did not find any rockusb device, please plug device in!");
 		NORMAL_COLOR_ATTR;
 		printf("\r\n");
 		return bSuccess;
+	}
+
+	/* resolve device from DEVLOCATION environment variable */
+	if (const char *env = getenv("DEVLOCATION")) {
+		char *end;
+		UINT loc = strtoul(env, &end, 16);
+		STRUCT_RKDEVICE_DESC tmp;
+		for (int j = 0; j < cnt; j++) {
+			if (pScan->GetDevice(tmp, j) && tmp.uiLocationID == loc) {
+				deviceIndex = j;
+				break;
+			}
+		}
+		if (deviceIndex < 0) {
+			printf("No device with DEVLOCATION=%s found!\r\n", env);
+			list_device(pScan);
+			return bSuccess;
+		}
 	} else if (cnt > 1) {
 		ERROR_COLOR_ATTR;
-		printf("Found too many rockusb devices, please plug devices out!");
+		printf("Found %ld rockusb devices, set DEVLOCATION=<loc> to select:", cnt);
 		NORMAL_COLOR_ATTR;
 		printf("\r\n");
+		list_device(pScan);
 		return bSuccess;
 	}
 
-	bRet = pScan->GetDevice(dev, 0);
+	bRet = pScan->GetDevice(dev, deviceIndex >= 0 ? deviceIndex : 0);
 	if (!bRet) {
 		ERROR_COLOR_ATTR;
 		printf("Getting information about rockusb device failed!");
