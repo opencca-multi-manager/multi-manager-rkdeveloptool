@@ -257,9 +257,23 @@ void CRKScan::EnumerateUsbDevice(RKDEVICE_DESC_SET &list, UINT &uiTotalMatchDevi
 			desc.usbcdUsb = descriptor.bcdUSB;
 			desc.usVid = descriptor.idVendor;
 			desc.usPid = descriptor.idProduct;
-			desc.uiLocationID = libusb_get_bus_number(dev);
-			desc.uiLocationID <<= 8;
-			desc.uiLocationID += libusb_get_port_number(dev);
+
+			/* XXX multi-manager:
+			 * 
+			 * full port path so devices on different hub levels
+			 * get unique LocationIDs even if they share the same last port number.
+			 *
+			 * Format: bus(8 bits) | port[0]<<16 | port[1]<<12 | ... 
+			 * 4 bits each, up to 6 levels 
+			 */
+			{
+				uint8_t ports[7];
+				int nports = libusb_get_port_numbers(dev, ports, sizeof(ports));
+				desc.uiLocationID = libusb_get_bus_number(dev) << 24;
+				for (int p = 0; p < nports && p < 6; p++) {
+					desc.uiLocationID |= (ports[p] & 0xF) << ((5 - p) * 4);
+				}
+			}
 			libusb_ref_device(dev);
 			uiTotalMatchDevices++;
 			list.push_back(desc);
